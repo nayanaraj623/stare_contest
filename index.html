@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Staring Contest - Blink Detection Game</title>
+    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .game-area {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .video-container {
+            position: relative;
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+        
+        video {
+            width: 100%;
+            max-width: 640px;
+            height: auto;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 15px;
+            pointer-events: none;
+        }
+        
+        .controls {
+            margin: 20px 0;
+        }
+        
+        button {
+            background: linear-gradient(45deg, #ff6b6b, #feca57);
+            border: none;
+            padding: 15px 30px;
+            border-radius: 25px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        #restartGame {
+            background: linear-gradient(45deg, #74b9ff, #0984e3);
+            display: none;
+        }
+        
+        .status {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            min-height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+        }
+        
+        .high-score {
+            font-size: 20px;
+            font-weight: bold;
+            color: #ffd700;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            margin-bottom: 20px;
+        }
+        
+        .instructions {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+            text-align: left;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #ffd700;
+        }
+        
+        .instructions ul {
+            padding-left: 20px;
+        }
+        
+        .instructions li {
+            margin: 10px 0;
+            line-height: 1.5;
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+            
+            button {
+                padding: 12px 24px;
+                font-size: 16px;
+            }
+            
+            .status {
+                font-size: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>👁️ Staring Contest 👁️</h1>
+        
+        <div class="high-score" id="highScore">🏆 High Score: 0 seconds</div>
+        
+        <div class="game-area">
+            <div class="video-container">
+                <video id="video" autoplay muted playsinline></video>
+                <canvas id="overlay"></canvas>
+            </div>
+            
+            <div class="controls">
+                <button id="startGame">🎮 Start Game</button>
+                <button id="restartGame">🔄 Restart</button>
+            </div>
+            
+            <div class="status" id="status">📷 Click "Start Game" to begin!</div>
+        </div>
+        
+        <div class="instructions">
+            <h3>📋 How to Play:</h3>
+            <ul>
+                <li><strong>Players:</strong> Exactly 2 players must be visible to the camera</li>
+                <li><strong>Positioning:</strong> Sit side by side, both faces clearly visible</li>
+                <li><strong>Goal:</strong> Don't blink! The first person to blink loses</li>
+                <li><strong>Detection:</strong> The game uses advanced facial landmark detection to monitor your eyes</li>
+                <li><strong>Calibration:</strong> Hold still for 5 seconds after both players are detected</li>
+                <li><strong>Scoring:</strong> Try to beat your high score!</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const startButton = document.getElementById("startGame");
+            const restartButton = document.getElementById("restartGame");
+            const video = document.getElementById("video");
+            const canvas = document.getElementById("overlay");
+            const ctx = canvas.getContext("2d");
+            const statusDiv = document.getElementById("status");
+            const highScoreDiv = document.getElementById("highScore");
+
+            let interval;
+            let gameStartTime = 0;
+            let gameRunning = false;
+            let hasGameStarted = false;
+            let faceStabilityCounter = 0;
+
+            // Adjusted thresholds for better detection
+            const blinkThreshold = 0.25;
+            const blinkFrameThreshold = 2; // Number of consecutive frames below threshold to register blink
+            
+            // Note: Using in-memory storage instead of localStorage as required for Claude artifacts
+            let highScore = 0;
+            highScoreDiv.innerText = `🏆 High Score: ${highScore} seconds`;
+
+            const blinkState = {
+                p1: { 
+                    closed: false, 
+                    framesBelowThreshold: 0,
+                    earHistory: [],
+                    baselineEAR: 0,
+                    dynamicThreshold: 0.25
+                },
+                p2: { 
+                    closed: false, 
+                    framesBelowThreshold: 0,
+                    earHistory: [],
+                    baselineEAR: 0,
+                    dynamicThreshold: 0.25
+                }
+            };
+
+            // Resize canvas to match video
+            function resizeCanvas() {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+            }
+
+            // Draw face landmarks and eye regions
+            function drawLandmarks(detections) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                detections.forEach((detection, index) => {
+                    const landmarks = detection.landmarks;
+                    const playerColor = index === 0 ? '#ff6b6b' : '#74b9ff';
+                    const playerId = index === 0 ? 'p1' : 'p2';
+                    const playerNum = index + 1;
+                    
+                    // Get landmark points (face-api.js uses _positions array)
+                    const points = landmarks._positions || landmarks.positions || landmarks;
+                    
+                    // Draw face outline (jawline points 0-16)
+                    if (points && points.length >= 68) {
+                        ctx.strokeStyle = playerColor;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(points[0].x, points[0].y);
+                        for (let i = 1; i <= 16; i++) {
+                            ctx.lineTo(points[i].x, points[i].y);
+                        }
+                        ctx.stroke();
+                        
+                        // Draw left eye (points 36-41)
+                        ctx.beginPath();
+                        ctx.moveTo(points[36].x, points[36].y);
+                        for (let i = 37; i <= 41; i++) {
+                            ctx.lineTo(points[i].x, points[i].y);
+                        }
+                        ctx.closePath();
+                        ctx.stroke();
+                        
+                        // Draw right eye (points 42-47)
+                        ctx.beginPath();
+                        ctx.moveTo(points[42].x, points[42].y);
+                        for (let i = 43; i <= 47; i++) {
+                            ctx.lineTo(points[i].x, points[i].y);
+                        }
+                        ctx.closePath();
+                        ctx.stroke();
+                        
+                        // Calculate EARs for display using manual point extraction
+                        const leftEye = [points[36], points[37], points[38], points[39], points[40], points[41]];
+                        const rightEye = [points[42], points[43], points[44], points[45], points[46], points[47]];
+                        
+                        const leftEAR = getEAR(leftEye);
+                        const rightEAR = getEAR(rightEye);
+                        const avgEAR = (leftEAR + rightEAR) / 2.0;
+                        
+                        // Fill eye areas based on blink state
+                        const state = blinkState[playerId];
+                        if (avgEAR < state.dynamicThreshold) {
+                            ctx.fillStyle = 'rgba(255, 107, 107, 0.3)';
+                            
+                            // Fill left eye
+                            ctx.beginPath();
+                            ctx.moveTo(points[36].x, points[36].y);
+                            for (let i = 37; i <= 41; i++) {
+                                ctx.lineTo(points[i].x, points[i].y);
+                            }
+                            ctx.closePath();
+                            ctx.fill();
+                            
+                            // Fill right eye
+                            ctx.beginPath();
+                            ctx.moveTo(points[42].x, points[42].y);
+                            for (let i = 43; i <= 47; i++) {
+                                ctx.lineTo(points[i].x, points[i].y);
+                            }
+                            ctx.closePath();
+                            ctx.fill();
+                        }
+                        
+                        // Draw player info
+                        ctx.fillStyle = playerColor;
+                        ctx.font = 'bold 16px Arial';
+                        const box = detection.detection.box;
+                        ctx.fillText(`Player ${playerNum}`, box.x, box.y - 10);
+                        ctx.fillText(`EAR: ${avgEAR.toFixed(3)}`, box.x, box.y - 30);
+                        ctx.fillText(`Threshold: ${state.dynamicThreshold.toFixed(3)}`, box.x, box.y - 50);
+                        
+                        // Show blink status
+                        const blinkStatus = avgEAR < state.dynamicThreshold ? '😑 CLOSED' : '👁️ OPEN';
+                        ctx.fillText(blinkStatus, box.x, box.y + box.height + 20);
+                    }
+                });
+            }
+
+            function getEAR(eye) {
+                const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+                const A = dist(eye[1], eye[5]);
+                const B = dist(eye[2], eye[4]);
+                const C = dist(eye[0], eye[3]);
+                return (A + B) / (2.0 * C);
+            }
+
+            function updateDynamicThreshold(playerId, ear) {
+                const state = blinkState[playerId];
+                state.earHistory.push(ear);
+                
+                // Keep only recent history
+                if (state.earHistory.length > 30) {
+                    state.earHistory.shift();
+                }
+                
+                // Calculate baseline (average of higher EAR values - open eyes)
+                const sortedHistory = [...state.earHistory].sort((a, b) => b - a);
+                const topValues = sortedHistory.slice(0, Math.floor(sortedHistory.length * 0.7));
+                state.baselineEAR = topValues.reduce((sum, val) => sum + val, 0) / topValues.length;
+                
+                // Set dynamic threshold as percentage of baseline
+                state.dynamicThreshold = state.baselineEAR * 0.75;
+                
+                // Ensure minimum threshold
+                if (state.dynamicThreshold < 0.2) {
+                    state.dynamicThreshold = 0.2;
+                }
+            }
+
+            function isBlinkingPro(playerId, landmarks) {
+                // Get landmark points directly
+                const points = landmarks._positions || landmarks.positions || landmarks;
+                
+                if (!points || points.length < 68) {
+                    return false;
+                }
+                
+                // Extract eye points manually (68-point facial landmarks)
+                const leftEye = [points[36], points[37], points[38], points[39], points[40], points[41]];
+                const rightEye = [points[42], points[43], points[44], points[45], points[46], points[47]];
+                
+                const leftEAR = getEAR(leftEye);
+                const rightEAR = getEAR(rightEye);
+                const avgEAR = (leftEAR + rightEAR) / 2.0;
+
+                const state = blinkState[playerId];
+                
+                // Update dynamic threshold
+                updateDynamicThreshold(playerId, avgEAR);
+
+                // Count frames below threshold
+                if (avgEAR < state.dynamicThreshold) {
+                    state.framesBelowThreshold++;
+                } else {
+                    if (state.framesBelowThreshold >= blinkFrameThreshold && state.closed) {
+                        // Blink completed (eyes reopened after being closed)
+                        state.closed = false;
+                        state.framesBelowThreshold = 0;
+                        return true;
+                    }
+                    state.framesBelowThreshold = 0;
+                }
+
+                // Mark as closed if enough consecutive frames below threshold
+                if (state.framesBelowThreshold >= blinkFrameThreshold && !state.closed) {
+                    state.closed = true;
+                }
+
+                return false;
+            }
+
+            // Load face-api models
+            Promise.all([
+                faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/'),
+                faceapi.nets.faceLandmark68Net.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/'),
+                faceapi.nets.faceRecognitionNet.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/')
+            ]).then(() => {
+                console.log("Models loaded successfully!");
+                statusDiv.innerText = "✅ Ready! Click 'Start Game' to begin.";
+            }).catch((error) => {
+                console.error("Error loading models:", error);
+                statusDiv.innerText = "❌ Error loading face detection models. Please refresh the page.";
+            });
+
+            startButton.addEventListener("click", async () => {
+                console.log("Start button clicked!");
+                startButton.disabled = true;
+
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { 
+                            width: { ideal: 640 }, 
+                            height: { ideal: 480 },
+                            facingMode: 'user'
+                        } 
+                    });
+                    video.srcObject = stream;
+                    await video.play();
+                    
+                    // Wait for video metadata to load
+                    video.addEventListener('loadedmetadata', resizeCanvas);
+                    if (video.videoWidth > 0) {
+                        resizeCanvas();
+                    }
+                    
+                    console.log("Camera started successfully");
+                    statusDiv.innerText = "📷 Camera started! Position both players in view...";
+                } catch (err) {
+                    console.error("Camera access error:", err);
+                    statusDiv.innerText = "❌ Camera access denied! Please allow camera access and try again.";
+                    startButton.disabled = false;
+                    return;
+                }
+
+                clearInterval(interval);
+                hasGameStarted = false;
+                gameRunning = false;
+                faceStabilityCounter = 0;
+                restartButton.style.display = "none";
+
+                interval = setInterval(async () => {
+                    try {
+                        const detections = await faceapi
+                            .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({
+                                inputSize: 416,
+                                scoreThreshold: 0.5
+                            }))
+                            .withFaceLandmarks();
+
+                        // Draw skeleton/landmarks regardless of game state
+                        if (detections.length > 0) {
+                            drawLandmarks(detections);
+                        } else {
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        }
+
+                        if (detections.length === 2) {
+                            faceStabilityCounter++;
+
+                            if (faceStabilityCounter < 5) {
+                                statusDiv.innerText = `👥 Hold still... Calibrating faces (${faceStabilityCounter}/5)`;
+                                return;
+                            }
+
+                            // Sort faces by horizontal position (left to right)
+                            const sorted = detections.sort((a, b) => a.detection.box.x - b.detection.box.x);
+                            const [p1, p2] = sorted;
+
+                            if (!hasGameStarted) {
+                                hasGameStarted = true;
+                                gameRunning = true;
+                                gameStartTime = Date.now();
+                                console.log("✅ Game started!");
+                                statusDiv.innerText = "🎯 Game ON! Don't blink!";
+                            }
+
+                            if (gameRunning) {
+                                const p1Blink = isBlinkingPro("p1", p1.landmarks);
+                                const p2Blink = isBlinkingPro("p2", p2.landmarks);
+
+                                if (p1Blink || p2Blink) {
+                                    clearInterval(interval);
+                                    const finalTime = Math.floor((Date.now() - gameStartTime) / 1000);
+                                    let loser = p1Blink ? "👤 Player 1 (Left)" : "👤 Player 2 (Right)";
+                                    statusDiv.innerText = `❌ ${loser} blinked! Final Time: ${finalTime} seconds`;
+
+                                    if (finalTime > highScore) {
+                                        highScore = finalTime;
+                                        highScoreDiv.innerText = `🏆 High Score: ${highScore} seconds (NEW RECORD!)`;
+                                        setTimeout(() => {
+                                            highScoreDiv.innerText = `🏆 High Score: ${highScore} seconds`;
+                                        }, 3000);
+                                    }
+
+                                    restartButton.style.display = "inline";
+                                    startButton.disabled = false;
+                                } else {
+                                    const elapsed = Math.floor((Date.now() - gameStartTime) / 1000);
+                                    statusDiv.innerText = `🎯 Staring contest in progress... ⏱ ${elapsed} seconds`;
+                                }
+                            }
+
+                        } else {
+                            faceStabilityCounter = 0;
+
+                            if (!hasGameStarted) {
+                                if (detections.length === 1) {
+                                    statusDiv.innerText = `⏳ Waiting for 2 players... (1 detected)`;
+                                } else if (detections.length === 0) {
+                                    statusDiv.innerText = `📷 No faces detected. Move closer to the camera.`;
+                                } else {
+                                    statusDiv.innerText = `⚠️ Too many faces! Only 2 players allowed.`;
+                                }
+                            } else {
+                                clearInterval(interval);
+                                const finalTime = Math.floor((Date.now() - gameStartTime) / 1000);
+
+                                if (detections.length < 2) {
+                                    statusDiv.innerText = `❌ Player left the game! Final Time: ${finalTime} seconds`;
+                                } else {
+                                    statusDiv.innerText = `❌ Too many faces detected! Final Time: ${finalTime} seconds`;
+                                }
+
+                                if (finalTime > highScore) {
+                                    highScore = finalTime;
+                                    highScoreDiv.innerText = `🏆 High Score: ${highScore} seconds (NEW RECORD!)`;
+                                    setTimeout(() => {
+                                        highScoreDiv.innerText = `🏆 High Score: ${highScore} seconds`;
+                                    }, 3000);
+                                }
+
+                                restartButton.style.display = "inline";
+                                startButton.disabled = false;
+                            }
+                        }
+                    } catch (error) {
+                        console.error("Detection error:", error);
+                        statusDiv.innerText = "❌ Detection error occurred. Try restarting the game.";
+                    }
+                }, 150);
+            });
+
+            restartButton.addEventListener("click", () => {
+                clearInterval(interval);
+                hasGameStarted = false;
+                gameRunning = false;
+                faceStabilityCounter = 0;
+                
+                // Stop the video stream
+                if (video.srcObject) {
+                    const tracks = video.srcObject.getTracks();
+                    tracks.forEach(track => track.stop());
+                    video.srcObject = null;
+                }
+                
+                statusDiv.innerText = "🔄 Game reset. Click 'Start Game' to play again!";
+                restartButton.style.display = "none";
+                startButton.disabled = false;
+                
+                // Reset blink states
+                blinkState.p1 = { 
+                    closed: false, 
+                    framesBelowThreshold: 0,
+                    earHistory: [],
+                    baselineEAR: 0,
+                    dynamicThreshold: 0.25
+                };
+                blinkState.p2 = { 
+                    closed: false, 
+                    framesBelowThreshold: 0,
+                    earHistory: [],
+                    baselineEAR: 0,
+                    dynamicThreshold: 0.25
+                };
+                
+                // Clear canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            });
+        });
+    </script>
+</body>
+</html>
